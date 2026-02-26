@@ -10,8 +10,17 @@
 </head>
 
 <body>
+  <div id="toast-container" class="toast-container"></div>
   <div class="container">
     <div class="card">
+      <div class="global-settings">
+        <select id="voice_select" class="btn select-voice">
+          <option value="en-US-AriaNeural">US Female (Aria)</option>
+          <option value="en-US-GuyNeural">US Male (Guy)</option>
+          <option value="en-GB-SoniaNeural">UK Female (Sonia)</option>
+          <option value="en-GB-RyanNeural">UK Male (Ryan)</option>
+        </select>
+      </div>
       <div class="tabs">
         <button id="tab_pdf" class="tab active">PDF to Audio</button>
         <button id="tab_text" class="tab">Text to Audio</button>
@@ -20,14 +29,13 @@
       <!-- PDF Section -->
       <div id="section_pdf" class="section">
         <div class="drop_box">
-          <img id="loading" class="hidden" src="/static/loading.svg" alt="loading..." />
+          <div id="progress_wrapper_pdf" class="progress-wrapper hidden">
+            <p id="status_label_pdf" class="status-label">Reading PDF...</p>
+            <div class="progress-track">
+              <div id="progress_bar_pdf" class="progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
           <input type="file" hidden accept=".pdf" id="fileID" style="display: none" />
-          <select id="voice_select" class="btn select-voice">
-            <option value="en-US-AriaNeural">US Female (Aria)</option>
-            <option value="en-US-GuyNeural">US Male (Guy)</option>
-            <option value="en-GB-SoniaNeural">UK Female (Sonia)</option>
-            <option value="en-GB-RyanNeural">UK Male (Ryan)</option>
-          </select>
           <button id="btn_choose" class="btn">Choose Your PDF File</button>
           <div id="action" class="action hidden">
             <button id="download" class="btn">Download Audio</button>
@@ -43,7 +51,12 @@
           <div class="text_actions">
             <button id="btn_submit_text" class="btn">Convert to Audio</button>
           </div>
-          <img id="loading_text" class="hidden" src="/static/loading.svg" alt="loading..." />
+          <div id="progress_wrapper_text" class="progress-wrapper hidden">
+            <p id="status_label_text" class="status-label">Preparing...</p>
+            <div class="progress-track">
+              <div id="progress_bar_text" class="progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
           <div id="action_text" class="action hidden">
             <button id="download_text" class="btn">Download Audio</button>
           </div>
