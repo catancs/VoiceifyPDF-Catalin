@@ -26,15 +26,18 @@
   display: flex;
   justify-content: center;
 }
+
 @media only screen and (max-width: 768px) {
-.card{
-  width: 80vw;
+  .card {
+    width: 80vw;
+  }
+
+  .action {
+    display: flex;
+    flex-direction: column;
+  }
 }
-.action{
-  display: flex;
-flex-direction: column;
-}
-}
+
 .drop_box {
   height: 150px;
   width: 550px;
@@ -44,39 +47,55 @@ flex-direction: column;
   display: flex;
   justify-content: center;
 }
-img{
+
+img {
   height: 100px;
 }
+
 .drop_box p {
   margin-bottom: 15px;
   font-size: 15px;
   color: #a3a3a3;
 }
+
 .btn {
-    background-color: black;
-    padding: 15px 0px;
-    width: 200px;
-    color: #ffffff;
-    font-weight: 600;
-    outline: none;
-    border-radius: 5px;
-    border: 2px solid transparent;
-    transition: .5s;
-    margin: 5px;
+  background-color: black;
+  padding: 15px 0px;
+  width: 200px;
+  color: #ffffff;
+  font-weight: 600;
+  outline: none;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  transition: .5s;
+  margin: 5px;
 }
 
-.btn:hover{
-    cursor: pointer;
-    background-color: #ffffff;
-    border-color: black;
-    color: black;
-    transition: .5s;
+.btn:hover {
+  cursor: pointer;
+  background-color: #ffffff;
+  border-color: black;
+  color: black;
+  transition: .5s;
 }
 
-.action{
+.action {
   display: flex;
   justify-content: space-around;
 }
-.hidden{
+
+.hidden {
   display: none;
+}
+
+.drop_box.dragover {
+  border-color: #000;
+  background-color: #f9f9f9;
+  transition: 0.3s ease;
+}
+
+audio {
+  margin-top: 15px;
+  width: 90%;
+  outline: none;
 }

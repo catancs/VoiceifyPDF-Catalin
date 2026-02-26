@@ -1,87 +1,101 @@
 const dropArea = document.querySelector(".drop_box"),
   button_choose = dropArea.querySelector("#btn_choose"),
-  dragText = dropArea.querySelector("header"),
   input = dropArea.querySelector("input"),
-  loading = dropArea.querySelector("#loading");
-  action_elements = dropArea.querySelector("#action");
+  loading = dropArea.querySelector("#loading"),
+  action_elements = dropArea.querySelector("#action"),
   download_btn = dropArea.querySelector("#download");
-  play_btn = dropArea.querySelector("#play");
 
-const URL = "http://127.0.0.1:8000";
-
-let playing = false;
 let fileName = null;
+let currentAudioUrl = null;
+
+// Drag & Drop functionality
+dropArea.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  dropArea.classList.add("dragover");
+});
+
+dropArea.addEventListener("dragleave", () => {
+  dropArea.classList.remove("dragover");
+});
+
+dropArea.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropArea.classList.remove("dragover");
+  if (event.dataTransfer.files.length > 0) {
+    processFile(event.dataTransfer.files[0]);
+  }
+});
 
 button_choose.onclick = () => {
   input.click();
 };
 
-const handleDownload = async (blob) => {
-  try {
-    playing = true;
-    const link = document.createElement("a");
-    link.href = window.URL.createObjectURL(blob);
-    link.download = `${fileName}.mp3`;
-    link.click();
-    window.URL.revokeObjectURL(link.href);
-  } catch (error) {
-    console.error(error);
-  }
-};
-const handlePlay = async (blob) => {
-  try {
-    playing = true;
-    audio = new Audio(window.URL.createObjectURL(blob));
-    document.body.appendChild(audio);
-    audio.play();
-    play_btn.textContent = "Pause";
-    play_btn.addEventListener("click", () => {
-      if (audio.paused) {
-        audio.play();
-        play_btn.textContent = "Pause";
-      } else {
-        audio.pause();
-        play_btn.textContent = "Play";
-      }
-    });
-    audio.addEventListener("ended", () => {
-      playing = false;
-      window.URL.revokeObjectURL(audio.src);
-      document.body.removeChild(audio);
-      document.body.removeChild(pauseButton);
-    });
-  } catch (error) {
-    console.error(error);
-  }
-};
-
 input.addEventListener("change", function (e) {
+  if (e.target.files.length > 0) {
+    processFile(e.target.files[0]);
+  }
+});
+
+function processFile(file) {
+  if (file.type !== "application/pdf") {
+    alert("Please upload a valid PDF file.");
+    return;
+  }
+
   button_choose.classList.add("hidden");
+  action_elements.classList.add("hidden");
   loading.classList.remove("hidden");
 
-  const formData = new FormData();
-  formData.append("file", e.target.files[0]);
-  
-  fileName = e.target.files[0].name.split('.').slice(0, -1).join('.');
+  // Remove existing audio player if user uploads a second file
+  const existingPlayer = document.getElementById("audio-player");
+  if (existingPlayer) existingPlayer.remove();
 
-  fetch(`${URL}/upload`, {
+  fileName = file.name.split('.').slice(0, -1).join('.');
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  // Use relative URL so it works on any domain/network
+  fetch(`/upload`, {
     method: "POST",
     body: formData,
   })
-    .then((response) => response.blob())
+    .then(async (response) => {
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Server error occurred");
+      }
+      return response.blob();
+    })
     .then((blob) => {
-      // Create an audio element
       loading.classList.add("hidden");
       action_elements.classList.remove("hidden");
 
-      download_btn.addEventListener("click", () => {
-        handleDownload(blob);
-      });
-      play_btn.addEventListener("click", () => {
-        if (!playing) {
-          handlePlay(blob);
-        }
-      });
+      if (currentAudioUrl) {
+        window.URL.revokeObjectURL(currentAudioUrl);
+      }
+      currentAudioUrl = window.URL.createObjectURL(blob);
+
+      // Setup Download
+      download_btn.onclick = () => {
+        const link = document.createElement("a");
+        link.href = currentAudioUrl;
+        link.download = `${fileName}.mp3`;
+        link.click();
+      };
+
+      // Create a native HTML5 audio player
+      const audioElement = document.createElement("audio");
+      audioElement.id = "audio-player";
+      audioElement.controls = true;
+      audioElement.src = currentAudioUrl;
+      dropArea.appendChild(audioElement);
+
     })
-    .catch((error) => console.error(error));
-});
+    .catch((error) => {
+      loading.classList.add("hidden");
+      button_choose.classList.remove("hidden");
+      alert(`Error: ${error.message}`);
+      console.error(error);
+    });
+}
