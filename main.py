@@ -1,10 +1,9 @@
 import io
 from PyPDF2 import PdfReader
-from gtts import gTTS
-from fastapi import FastAPI, File, UploadFile, HTTPException
+import edge_tts
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.concurrency import run_in_threadpool
 
 app = FastAPI()
 
@@ -16,16 +15,18 @@ async def read_index():
         html_content = f.read()
     return HTMLResponse(content=html_content, status_code=200)
 
-def generate_audio(text: str, language: str = "en") -> io.BytesIO:
-    """Helper function to run synchronous gTTS in a separate thread."""
-    tts = gTTS(text=text, lang=language)
-    audio_bytes = io.BytesIO()
-    tts.write_to_fp(audio_bytes)
-    audio_bytes.seek(0)
-    return audio_bytes
+async def generate_audio_stream(text: str, voice: str):
+    """Streams audio chunks directly from Microsoft Edge Neural TTS."""
+    communicate = edge_tts.Communicate(text, voice)
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            yield chunk["data"]
 
 @app.post("/upload")
-async def create_upload_file(file: UploadFile = File(...)):
+async def create_upload_file(
+    file: UploadFile = File(...),
+    voice: str = Form("en-US-AriaNeural")
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Uploaded file must be a PDF")
 
@@ -42,12 +43,27 @@ async def create_upload_file(file: UploadFile = File(...)):
         if not text.strip():
             raise HTTPException(status_code=400, detail="No readable text found. The PDF might be scanned images.")
 
-        # Run the synchronous gTTS generation in a threadpool to prevent blocking
-        audio_bytes = await run_in_threadpool(generate_audio, text, "en")
-
-        return StreamingResponse(audio_bytes, media_type="audio/mp3")
+        # Stream the audio directly back to the client as it generates
+        return StreamingResponse(generate_audio_stream(text, voice), media_type="audio/mp3")
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+
+@app.post("/upload-text")
+async def create_upload_text(
+    text: str = Form(...),
+    voice: str = Form("en-US-AriaNeural")
+):
+    if not text or not text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty.")
+
+    try:
+        return StreamingResponse(
+            generate_audio_stream(text.strip(), voice),
+            media_type="audio/mp3"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing text: {str(e)}")

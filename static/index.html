@@ -6,20 +6,50 @@
   <link rel="stylesheet" href="/static/style.css" />
   <link rel="shortcut icon" href="/static/favicon.png" type="image/x-icon" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pdf to Audio</title>
+  <title>VoiceifyPDF</title>
 </head>
 
 <body>
   <div class="container">
     <div class="card">
-      <div class="drop_box">
-        <img id="loading" class="hidden" src="/static/loading.svg" alt="loading..." />
-        <input type="file" hidden accept=".pdf" id="fileID" style="display: none" />
-        <button id="btn_choose" class="btn">Choose Your PDF File</button>
-        <div id="action" class="action hidden">
-          <button id="download" class="btn">Download Audio</button>
+      <div class="tabs">
+        <button id="tab_pdf" class="tab active">PDF to Audio</button>
+        <button id="tab_text" class="tab">Text to Audio</button>
+      </div>
+
+      <!-- PDF Section -->
+      <div id="section_pdf" class="section">
+        <div class="drop_box">
+          <img id="loading" class="hidden" src="/static/loading.svg" alt="loading..." />
+          <input type="file" hidden accept=".pdf" id="fileID" style="display: none" />
+          <select id="voice_select" class="btn select-voice">
+            <option value="en-US-AriaNeural">US Female (Aria)</option>
+            <option value="en-US-GuyNeural">US Male (Guy)</option>
+            <option value="en-GB-SoniaNeural">UK Female (Sonia)</option>
+            <option value="en-GB-RyanNeural">UK Male (Ryan)</option>
+          </select>
+          <button id="btn_choose" class="btn">Choose Your PDF File</button>
+          <div id="action" class="action hidden">
+            <button id="download" class="btn">Download Audio</button>
+          </div>
         </div>
       </div>
+
+      <!-- Text Section -->
+      <div id="section_text" class="section hidden">
+        <div class="drop_box text_drop_box">
+          <textarea id="text_input" placeholder="Type or paste your text here to convert to audio..."
+            rows="4"></textarea>
+          <div class="text_actions">
+            <button id="btn_submit_text" class="btn">Convert to Audio</button>
+          </div>
+          <img id="loading_text" class="hidden" src="/static/loading.svg" alt="loading..." />
+          <div id="action_text" class="action hidden">
+            <button id="download_text" class="btn">Download Audio</button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </body>
