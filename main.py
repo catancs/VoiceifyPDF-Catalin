@@ -8,7 +8,7 @@ import edge_tts
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 app = FastAPI()
 
@@ -119,6 +119,9 @@ async def create_upload_file(
                 JOBS[job_id]["status"] = "ready"
                 JOBS[job_id]["progress"] = 50
                 JOBS[job_id]["message"] = "Ready to generate audio"
+                JOBS[job_id]["buffer"] = bytearray()
+                JOBS[job_id]["buffer_event"] = asyncio.Event()
+            asyncio.create_task(run_tts_generator(job_id))
             print(f"[job {job_id}] Extract ok: {len(chunks)} chunks")
         except Exception as e:
             print(f"[job {job_id}] Extract error: {e}")
@@ -153,7 +156,10 @@ async def create_upload_text(
             "chunks": chunks,
             "voice": voice,
             "error": None,
+            "buffer": bytearray(),
+            "buffer_event": asyncio.Event(),
         }
+    asyncio.create_task(run_tts_generator(job_id))
     print(f"[upload-text] job_id={job_id} created, chunks={len(chunks)}")
     return {"job_id": job_id}
 
@@ -210,55 +216,98 @@ async def job_status(job_id: str):
     )
 
 
-async def generate_audio_stream_chunked(chunks: list[str], voice: str, job_id: str):
-    import time
+async def run_tts_generator(job_id: str) -> None:
+    async with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job or not job.get("chunks") or "buffer" not in job:
+            return
+        chunks = job["chunks"]
+        voice = job.get("voice", "en-US-AriaNeural")
+        buffer = job["buffer"]
+        buffer_event = job["buffer_event"]
     num = len(chunks)
-    print(f"[stream-audio] job_id={job_id} starting generator, total chunks={num}")
     for i, block in enumerate(chunks):
-        t0 = time.perf_counter()
-        print(f"[stream-audio] job_id={job_id} chunk {i + 1}/{num} starting TTS (len={len(block)} chars)")
         communicate = edge_tts.Communicate(block, voice)
-        chunk_bytes = 0
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                chunk_bytes += len(chunk["data"])
-                yield chunk["data"]
-        elapsed = time.perf_counter() - t0
-        print(f"[stream-audio] job_id={job_id} chunk {i + 1}/{num} done in {elapsed:.2f}s, yielded {chunk_bytes} bytes")
+                async with JOB_LOCK:
+                    job = JOBS.get(job_id)
+                    if job and job.get("buffer") is not None:
+                        job["buffer"].extend(chunk["data"])
+                        job["buffer_event"].set()
         progress = 50 + int(50 * (i + 1) / num) if num else 100
         async with JOB_LOCK:
             job = JOBS.get(job_id)
             if job:
                 job["progress"] = min(progress, 100)
                 job["message"] = f"Synthesizing audio ({progress}%)..."
-    print(f"[stream-audio] job_id={job_id} all chunks done, marking job complete")
     async with JOB_LOCK:
         job = JOBS.get(job_id)
         if job:
             job["status"] = "done"
             job["progress"] = 100
             job["message"] = "Complete"
+            if job.get("buffer_event"):
+                job["buffer_event"].set()
+
+
+async def stream_audio_consumer(job_id: str):
+    sent = 0
+    while True:
+        async with JOB_LOCK:
+            job = JOBS.get(job_id)
+            if not job:
+                return
+            buffer = job.get("buffer")
+            buffer_event = job.get("buffer_event")
+            if buffer is None or buffer_event is None:
+                return
+            data = bytes(buffer[sent:])
+            sent = len(buffer)
+            done = job["status"] == "done"
+        if data:
+            yield data
+        if done:
+            return
+        if not data:
+            buffer_event.clear()
+            await buffer_event.wait()
 
 
 @app.get("/stream-audio/{job_id}")
 async def stream_audio(job_id: str):
-    print(f"[stream-audio] GET job_id={job_id}")
     async with JOB_LOCK:
         job = JOBS.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job["status"] == "error":
             raise HTTPException(status_code=400, detail=job.get("error", "Job failed"))
-        chunks = job.get("chunks")
-        voice = job.get("voice", "en-US-AriaNeural")
-        if not chunks:
+        if not job.get("chunks"):
             raise HTTPException(status_code=400, detail="Job not ready yet")
-        job["status"] = "generating"
-        job["progress"] = 50
-        job["message"] = "Synthesizing audio (50%)..."
-    print(f"[stream-audio] job_id={job_id} returning StreamingResponse, chunks={len(chunks)}")
+        if job.get("buffer") is None or job.get("buffer_event") is None:
+            raise HTTPException(status_code=400, detail="Job not ready yet")
     return StreamingResponse(
-        generate_audio_stream_chunked(chunks, voice, job_id),
+        stream_audio_consumer(job_id),
         media_type="audio/mpeg",
         headers={"Accept-Ranges": "bytes"},
+    )
+
+
+@app.get("/download-audio/{job_id}")
+async def download_audio(job_id: str):
+    async with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job["status"] != "done":
+            raise HTTPException(status_code=400, detail="Job not complete yet")
+        buffer = job.get("buffer")
+        if buffer is None or len(buffer) == 0:
+            raise HTTPException(status_code=404, detail="Audio already downloaded or unavailable")
+        data = bytes(buffer)
+        job["buffer"] = None
+    return Response(
+        content=data,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "attachment; filename=\"audio.mp3\""},
     )

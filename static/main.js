@@ -88,37 +88,43 @@ function subscribeStatus(jobId, onUpdate, onError) {
   return () => es.close();
 }
 
-function pollJobUntilDone(jobId, onUpdate, onDone, onError, intervalMs) {
-  intervalMs = intervalMs || 1000;
-  let pollCount = 0;
-  const t = setInterval(async () => {
-    pollCount += 1;
-    try {
-      const res = await fetch(`/job/${jobId}`);
-      if (!res.ok) {
-        console.warn("[poll] #" + pollCount + " GET /job/" + jobId + " not ok:", res.status);
-        return;
-      }
-      const data = await res.json();
-      if (pollCount <= 2 || pollCount % 5 === 0 || data.status === "done" || data.status === "error") {
-        console.log("[poll] #" + pollCount + " status=" + data.status + " progress=" + data.progress);
-      }
-      if (data.status === "error") {
-        clearInterval(t);
-        onError(data.error || data.message || "Job failed");
-        return;
-      }
-      onUpdate(data);
-      if (data.status === "done") {
-        console.log("[poll] Got done after " + pollCount + " polls");
-        clearInterval(t);
-        onDone();
-      }
-    } catch (e) {
-      console.warn("[poll] #" + pollCount + " fetch error", e);
-    }
-  }, intervalMs);
-  return () => clearInterval(t);
+function pollJobUntilDone(jobId, onUpdate, onDone, onError, delayMs) {
+  const minDelay = 1000;
+  const maxDelay = 5000;
+  const backoffFactor = 1.5;
+  delayMs = delayMs != null ? delayMs : minDelay;
+
+  function poll(currentDelay) {
+    currentDelay = currentDelay != null ? currentDelay : minDelay;
+    fetch(`/job/${jobId}`)
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (!data) {
+          const next = Math.min(maxDelay, Math.floor(currentDelay * backoffFactor));
+          setTimeout(() => poll(next), next);
+          return;
+        }
+        onUpdate(data);
+        if (data.status === "error") {
+          onError(data.error || data.message || "Job failed");
+          return;
+        }
+        if (data.status === "done") {
+          onDone();
+          return;
+        }
+        const next = Math.min(maxDelay, Math.floor(currentDelay * backoffFactor));
+        setTimeout(() => poll(next), next);
+      })
+      .catch(() => {
+        const next = Math.min(maxDelay, Math.floor(currentDelay * backoffFactor));
+        setTimeout(() => poll(next), next);
+      });
+  }
+  setTimeout(() => poll(delayMs), delayMs);
 }
 
 tabPdf.addEventListener("click", () => {
@@ -220,23 +226,8 @@ function processFile(file) {
             setProgressPdf(false);
             actionElements.classList.remove("hidden");
             buttonChoose.classList.remove("hidden");
-            fetch(`/stream-audio/${job_id}`)
-              .then((r) => r.blob())
-              .then((blob) => {
-                console.log("[PDF] Blob for download received, size:", blob.size);
-                currentAudioUrl = window.URL.createObjectURL(blob);
-                downloadBtn.onclick = () => {
-                  const a = document.createElement("a");
-                  a.href = currentAudioUrl;
-                  a.download = `${fileName}.mp3`;
-                  a.click();
-                };
-                audioEl.src = currentAudioUrl;
-                fetch(`/job/${job_id}`).then((r) => r.json()).then((d) => { if (d.truncated) showError("PDF was very long; only the first part was converted to audio."); });
-              })
-              .catch((e) => {
-                console.error("[PDF] Fetch blob for download failed", e);
-              });
+            downloadBtn.onclick = () => { window.location.href = `/download-audio/${job_id}`; };
+            fetch(`/job/${job_id}`).then((r) => r.json()).then((d) => { if (d.truncated) showError("PDF was very long; only the first part was converted to audio."); });
             unsubscribe();
           }
         },
@@ -250,20 +241,8 @@ function processFile(file) {
                 setProgressPdf(false);
                 actionElements.classList.remove("hidden");
                 buttonChoose.classList.remove("hidden");
-                fetch(`/stream-audio/${job_id}`)
-                  .then((r) => r.blob())
-                  .then((blob) => {
-                    currentAudioUrl = window.URL.createObjectURL(blob);
-                    downloadBtn.onclick = () => {
-                      const a = document.createElement("a");
-                      a.href = currentAudioUrl;
-                      a.download = `${fileName}.mp3`;
-                      a.click();
-                    };
-                    audioEl.src = currentAudioUrl;
-                    fetch(`/job/${job_id}`).then((r) => r.json()).then((d) => { if (d.truncated) showError("PDF was very long; only the first part was converted to audio."); });
-                  })
-                  .catch((e) => console.error("[PDF] Fetch blob failed", e));
+                downloadBtn.onclick = () => { window.location.href = `/download-audio/${job_id}`; };
+                fetch(`/job/${job_id}`).then((r) => r.json()).then((d) => { if (d.truncated) showError("PDF was very long; only the first part was converted to audio."); });
               },
               (errMsg) => {
                 setProgressPdf(false);
@@ -343,19 +322,7 @@ btnSubmitText.onclick = () => {
             setProgressText(false);
             actionText.classList.remove("hidden");
             textActions.classList.remove("hidden");
-            fetch(`/stream-audio/${job_id}`)
-              .then((r) => r.blob())
-              .then((blob) => {
-                const url = window.URL.createObjectURL(blob);
-                downloadBtnText.onclick = () => {
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = "voiceify-audio.mp3";
-                  a.click();
-                };
-                audioEl.src = url;
-              })
-              .catch(() => {});
+            downloadBtnText.onclick = () => { window.location.href = `/download-audio/${job_id}`; };
             unsubscribe();
           }
         },
@@ -368,19 +335,7 @@ btnSubmitText.onclick = () => {
                 setProgressText(false);
                 actionText.classList.remove("hidden");
                 textActions.classList.remove("hidden");
-                fetch(`/stream-audio/${job_id}`)
-                  .then((r) => r.blob())
-                  .then((blob) => {
-                    const url = window.URL.createObjectURL(blob);
-                    downloadBtnText.onclick = () => {
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = "voiceify-audio.mp3";
-                      a.click();
-                    };
-                    audioEl.src = url;
-                  })
-                  .catch(() => {});
+                downloadBtnText.onclick = () => { window.location.href = `/download-audio/${job_id}`; };
               },
               (errMsg) => {
                 setProgressText(false);
